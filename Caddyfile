@@ -1,0 +1,45 @@
+{
+    admin off
+    auto_https off
+}
+
+:80 {
+    root * /var/www/html
+    encode zstd gzip
+    file_server
+
+    # Begin - Grav Security Rules (Official Grav 2.0 Spec)
+    @denied_dirs path_regexp (?i)^/(\.git|cache|bin|logs|backups?|tests)/
+    @denied_user_config path_regexp (?i)^/user/(config|env)/
+    @denied_user_accounts {
+        path_regexp (?i)^/user/accounts/
+        not path_regexp (?i)^/user/accounts/[^/]+/[^/]+\.(jpe?g|png|gif|webp|avif|bmp|ico)$
+    }
+    @denied_user_data {
+        path_regexp (?i)^/user/data/
+        not path_regexp (?i)\.(jpe?g|png|gif|webp|avif|bmp|ico|mp4|webm|ogg|ogv|mov|mp3|wav|m4a|flac|pdf)$
+    }
+    @denied_system path_regexp (?i)^/(system|vendor)/.*\.(txt|xml|md|html|htm|shtml|shtm|yaml|yml|php|php2|php3|php4|php5|phar|phtml|pl|py|cgi|twig|sh|bat)$
+    @denied_user_scripts path_regexp (?i)^/user/.*\.(txt|md|yaml|yml|php|php2|php3|php4|php5|phar|phtml|pl|py|cgi|twig|sh|bat)$
+    @denied_root_files path_regexp (?i)^/(LICENSE\.txt|composer\.lock|composer\.json|nginx\.conf|web\.config|htaccess\.txt)$
+    @denied_dotfiles path_regexp (?i)(^|/)\.[^/]+$
+    # End - Grav Security Rules
+
+    route {
+        respond @denied_dirs 403
+        respond @denied_user_config 403
+        respond @denied_user_accounts 403
+        respond @denied_user_data 403
+        respond @denied_system 403
+        respond @denied_user_scripts 403
+        respond @denied_root_files 403
+        respond @denied_dotfiles 403
+
+        # Grav routing
+        try_files {path} {path}/ /index.php?_url={uri}&{query}
+
+        php_fastcgi 127.0.0.1:9000 {
+            capture_stderr
+        }
+    }
+}

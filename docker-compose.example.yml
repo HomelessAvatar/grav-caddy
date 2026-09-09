@@ -1,0 +1,13 @@
+services:
+  grav:
+    image: ghcr.io/homelessavatar/grav-caddy:latest
+    container_name: grav-caddy
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - TZ=Europe/Istanbul
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./data:/var/www/html
