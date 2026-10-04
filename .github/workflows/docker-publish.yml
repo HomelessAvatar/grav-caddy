@@ -8,6 +8,12 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      target_tag:
+        type: string
+        required: false
+        default: ''
   schedule:
     # Rebuild weekly on Mondays at 03:00 UTC for latest base image & security patches
     - cron: '0 3 * * 1'
@@ -26,6 +32,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_tag != '' && format('refs/tags/{0}', inputs.target_tag) || github.ref }}
+          fetch-depth: 0
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -45,13 +54,29 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=auto
           tags: |
             type=ref,event=tag
+            type=raw,value=${{ inputs.target_tag }},enable=${{ inputs.target_tag != '' }}
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.ref == format('refs/heads/{0}', 'master') }}
             type=raw,value=php8.4
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
+
+      - name: Determine Grav version
+        id: grav_version
+        run: |
+          if [[ "${{ github.ref }}" =~ ^refs/tags/v? ]]; then
+            VER="${GITHUB_REF#refs/tags/}"
+            echo "version=${VER#v}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.target_tag }}" ]; then
+            VER="${{ inputs.target_tag }}"
+            echo "version=${VER#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=2.1.2" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -59,6 +84,8 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            GRAV_VERSION=${{ steps.grav_version.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

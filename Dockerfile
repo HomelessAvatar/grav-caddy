@@ -7,6 +7,9 @@ FROM caddy:2-alpine AS caddy-bin
 # Step 2: Build Grav Caddy image
 FROM php:${PHP_VERSION}-fpm-alpine
 
+ARG GRAV_VERSION=2.1.2
+ENV GRAV_VERSION=${GRAV_VERSION}
+
 LABEL org.opencontainers.image.title="Grav Caddy"
 LABEL org.opencontainers.image.description="Ultra-lightweight Grav CMS image powered by Alpine Linux, PHP 8.4-FPM, and Caddy v2 with HTTP/3 support."
 LABEL org.opencontainers.image.source="https://github.com/HomelessAvatar/grav-caddy"

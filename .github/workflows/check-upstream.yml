@@ -1,0 +1,93 @@
+name: Check Upstream Releases (Grav & Caddy)
+
+on:
+  schedule:
+    # Run daily at 04:00 UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      app_updated: ${{ steps.check.outputs.app_updated }}
+      caddy_updated: ${{ steps.check.outputs.caddy_updated }}
+      new_app_tag: ${{ steps.check.outputs.new_app_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check Upstream Grav & Caddy
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 1. Check Caddy (caddyserver/caddy)
+          CURRENT_CADDY=""
+          if [ -f .caddy-version ]; then
+            CURRENT_CADDY=$(cat .caddy-version | tr -d '[:space:]')
+          fi
+          LATEST_CADDY=$(curl -s -H "User-Agent: curl" -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/caddyserver/caddy/releases/latest | jq -r .tag_name)
+          echo "Current Caddy: $CURRENT_CADDY | Latest upstream Caddy: $LATEST_CADDY"
+
+          CADDY_UPDATED="false"
+          if [ -n "$LATEST_CADDY" ] && [ "$LATEST_CADDY" != "null" ] && [ "$LATEST_CADDY" != "$CURRENT_CADDY" ]; then
+            echo "New Caddy release detected: $LATEST_CADDY"
+            echo "$LATEST_CADDY" > .caddy-version
+            git add .caddy-version
+            git commit -m "ci(caddy): bump upstream Caddy to $LATEST_CADDY"
+            git push origin main
+            CADDY_UPDATED="true"
+          fi
+
+          # 2. Check Grav CMS (getgrav/grav)
+          LATEST_GRAV=$(curl -s -H "User-Agent: curl" -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/getgrav/grav/releases/latest | jq -r .tag_name)
+          echo "Latest upstream Grav: $LATEST_GRAV"
+
+          APP_UPDATED="false"
+          NEW_APP_TAG=""
+          if [ -n "$LATEST_GRAV" ] && [ "$LATEST_GRAV" != "null" ]; then
+            if [[ "$LATEST_GRAV" =~ ^v ]]; then
+              TARGET_TAG="$LATEST_GRAV"
+              CLEAN_VER="${LATEST_GRAV#v}"
+            else
+              TARGET_TAG="v$LATEST_GRAV"
+              CLEAN_VER="$LATEST_GRAV"
+            fi
+
+            if git rev-parse "$TARGET_TAG" >/dev/null 2>&1 || git ls-remote --tags origin "$TARGET_TAG" | grep -q "$TARGET_TAG"; then
+              echo "Grav tag $TARGET_TAG already exists. Up to date."
+            else
+              echo "New Grav release detected: $TARGET_TAG ($CLEAN_VER)! Creating tag..."
+              sed -i "s|ARG GRAV_VERSION=.*|ARG GRAV_VERSION=$CLEAN_VER|g" Dockerfile
+              git add Dockerfile
+              git commit -m "chore(release): bump Grav to $TARGET_TAG" || true
+              git tag -a "$TARGET_TAG" -m "Release $TARGET_TAG (Upstream Grav CMS $CLEAN_VER)"
+              git push origin main || true
+              git push origin "$TARGET_TAG"
+              APP_UPDATED="true"
+              NEW_APP_TAG="$TARGET_TAG"
+            fi
+          fi
+
+          echo "caddy_updated=$CADDY_UPDATED" >> "$GITHUB_OUTPUT"
+          echo "app_updated=$APP_UPDATED" >> "$GITHUB_OUTPUT"
+          echo "new_app_tag=$NEW_APP_TAG" >> "$GITHUB_OUTPUT"
+
+  build-and-publish:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.app_updated == 'true' || needs.check-upstream.outputs.caddy_updated == 'true'
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      target_tag: ${{ needs.check-upstream.outputs.new_app_tag }}
