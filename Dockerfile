@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG PHP_VERSION=8.4
+ARG PHP_VERSION=8.4.27
 
 # Step 1: Extract official Caddy binary
 FROM caddy:2-alpine AS caddy-bin

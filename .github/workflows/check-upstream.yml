@@ -64,7 +64,8 @@ jobs:
           if [ -n "$LATEST_PHP" ] && [ "$LATEST_PHP" != "null" ] && [ "$LATEST_PHP" != "$CURRENT_PHP" ]; then
             echo "New PHP release detected: $LATEST_PHP"
             echo "$LATEST_PHP" > .php-version
-            git add .php-version
+            sed -i "s|ARG PHP_VERSION=.*|ARG PHP_VERSION=$LATEST_PHP|g" Dockerfile
+            git add .php-version Dockerfile
             git commit -m "ci(php): bump upstream PHP to $LATEST_PHP"
             git push origin main
             PHP_UPDATED="true"
