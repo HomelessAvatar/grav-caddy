@@ -1,4 +1,4 @@
-name: Check Upstream Releases (Grav & Caddy)
+name: Check Upstream Releases (Grav, Caddy & PHP)
 
 on:
   schedule:
@@ -16,6 +16,7 @@ jobs:
     outputs:
       app_updated: ${{ steps.check.outputs.app_updated }}
       caddy_updated: ${{ steps.check.outputs.caddy_updated }}
+      php_updated: ${{ steps.check.outputs.php_updated }}
       new_app_tag: ${{ steps.check.outputs.new_app_tag }}
     steps:
       - name: Checkout repository
@@ -24,7 +25,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check Upstream Grav & Caddy
+      - name: Check Upstream Grav, Caddy & PHP
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,7 +52,25 @@ jobs:
             CADDY_UPDATED="true"
           fi
 
-          # 2. Check Grav CMS (getgrav/grav)
+          # 2. Check PHP 8.4 Base Image (php:8.4-fpm-alpine on Docker Hub)
+          CURRENT_PHP=""
+          if [ -f .php-version ]; then
+            CURRENT_PHP=$(cat .php-version | tr -d '[:space:]')
+          fi
+          LATEST_PHP=$(curl -s "https://hub.docker.com/v2/repositories/library/php/tags?name=8.4&page_size=25" | jq -r '.results[].name | select(test("^8\\.4\\.[0-9]+-fpm-alpine$"))' | sed -E 's/^8\.4\.([0-9]+)-fpm-alpine$/8.4.\1/' | sort -V | tail -n 1)
+          echo "Current PHP: $CURRENT_PHP | Latest upstream PHP: $LATEST_PHP"
+
+          PHP_UPDATED="false"
+          if [ -n "$LATEST_PHP" ] && [ "$LATEST_PHP" != "null" ] && [ "$LATEST_PHP" != "$CURRENT_PHP" ]; then
+            echo "New PHP release detected: $LATEST_PHP"
+            echo "$LATEST_PHP" > .php-version
+            git add .php-version
+            git commit -m "ci(php): bump upstream PHP to $LATEST_PHP"
+            git push origin main
+            PHP_UPDATED="true"
+          fi
+
+          # 3. Check Grav CMS (getgrav/grav)
           LATEST_GRAV=$(curl -s -H "User-Agent: curl" -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/getgrav/grav/releases/latest | jq -r .tag_name)
           echo "Latest upstream Grav: $LATEST_GRAV"
 
@@ -82,12 +101,13 @@ jobs:
           fi
 
           echo "caddy_updated=$CADDY_UPDATED" >> "$GITHUB_OUTPUT"
+          echo "php_updated=$PHP_UPDATED" >> "$GITHUB_OUTPUT"
           echo "app_updated=$APP_UPDATED" >> "$GITHUB_OUTPUT"
           echo "new_app_tag=$NEW_APP_TAG" >> "$GITHUB_OUTPUT"
 
   build-and-publish:
     needs: check-upstream
-    if: needs.check-upstream.outputs.app_updated == 'true' || needs.check-upstream.outputs.caddy_updated == 'true'
+    if: needs.check-upstream.outputs.app_updated == 'true' || needs.check-upstream.outputs.caddy_updated == 'true' || needs.check-upstream.outputs.php_updated == 'true'
     uses: ./.github/workflows/docker-publish.yml
     with:
       target_tag: ${{ needs.check-upstream.outputs.new_app_tag }}

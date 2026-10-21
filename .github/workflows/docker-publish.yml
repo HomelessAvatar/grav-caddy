@@ -49,22 +49,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          flavor: |
-            latest=auto
-          tags: |
-            type=ref,event=tag
-            type=raw,value=${{ inputs.target_tag }},enable=${{ inputs.target_tag != '' }}
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.ref == format('refs/heads/{0}', 'master') }}
-            type=raw,value=php8.4
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-
       - name: Determine Grav version
         id: grav_version
         run: |
@@ -75,8 +59,27 @@ jobs:
             VER="${{ inputs.target_tag }}"
             echo "version=${VER#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=2.1.2" >> "$GITHUB_OUTPUT"
+            VER=$(grep 'ARG GRAV_VERSION=' Dockerfile | cut -d= -f2 | tr -d '[:space:]')
+            echo "version=${VER:-2.2.11}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=ref,event=tag
+            type=raw,value=${{ inputs.target_tag }},enable=${{ inputs.target_tag != '' }}
+            type=raw,value=v${{ steps.grav_version.outputs.version }}
+            type=raw,value=${{ steps.grav_version.outputs.version }}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.ref == format('refs/heads/{0}', 'master') }}
+            type=raw,value=php8.4
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
