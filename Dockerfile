@@ -7,7 +7,7 @@ FROM caddy:2-alpine AS caddy-bin
 # Step 2: Build Grav Caddy image
 FROM php:${PHP_VERSION}-fpm-alpine
 
-ARG GRAV_VERSION=2.2.11
+ARG GRAV_VERSION=2.2.12
 ENV GRAV_VERSION=${GRAV_VERSION}
 
 LABEL org.opencontainers.image.title="Grav Caddy"
